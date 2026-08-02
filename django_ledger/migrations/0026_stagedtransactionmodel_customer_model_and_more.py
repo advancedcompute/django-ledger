@@ -4,9 +4,8 @@ import django.core.validators
 import django.db.models.deletion
 import django_ledger.io.io_core
 import uuid
-from django.db import migrations, models
 
-from django.db import migrations
+from django.db import migrations, models
 
 
 def column_exists(schema_editor, table_name, column_name):
@@ -21,40 +20,36 @@ def column_exists(schema_editor, table_name, column_name):
 
     return column_name in columns
 
-def add_customer_model_column(apps, schema_editor):
-    connection = schema_editor.connection
 
-    table_name = "django_ledger_stagedtransactionmodel"
-    column_name = "customer_model_id"
+def add_field_if_missing(apps, schema_editor, model_name, field_name):
+    Model = apps.get_model("django_ledger", model_name)
 
-    with connection.cursor() as cursor:
-        if schema_editor.connection.vendor == "mysql":
-            cursor.execute(
-                """
-                SELECT COUNT(*)
-                FROM information_schema.columns
-                WHERE table_schema = DATABASE()
-                AND table_name = %s
-                AND column_name = %s
-                """,
-                [table_name, column_name],
-            )
-            exists = cursor.fetchone()[0] > 0
+    table_name = Model._meta.db_table
+    column_name = Model._meta.get_field(field_name).column
 
-            if exists:
-                return
+    if column_exists(schema_editor, table_name, column_name):
+        return
 
-    StagedTransactionModel = apps.get_model(
-        "django_ledger",
-        "StagedTransactionModel",
-    )
-
-    field = StagedTransactionModel._meta.get_field("customer_model")
+    field = Model._meta.get_field(field_name)
 
     schema_editor.add_field(
-        StagedTransactionModel,
+        Model,
         field,
     )
+
+
+def create_model_if_missing(apps, schema_editor, model_name):
+    Model = apps.get_model("django_ledger", model_name)
+
+    table_name = Model._meta.db_table
+
+    with schema_editor.connection.cursor() as cursor:
+        tables = schema_editor.connection.introspection.table_names(cursor)
+
+    if table_name in tables:
+        return
+
+    schema_editor.create_model(Model)
 
 
 class Migration(migrations.Migration):
@@ -64,10 +59,17 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+
         migrations.SeparateDatabaseAndState(
             database_operations=[
                 migrations.RunPython(
-                    add_customer_model_column,
+                    lambda apps, schema_editor:
+                        add_field_if_missing(
+                            apps,
+                            schema_editor,
+                            "StagedTransactionModel",
+                            "customer_model",
+                        ),
                     reverse_code=migrations.RunPython.noop,
                 ),
             ],
@@ -83,38 +85,168 @@ class Migration(migrations.Migration):
                 ),
             ],
         ),
-        migrations.AddField(
-            model_name='stagedtransactionmodel',
-            name='receipt_type',
-            field=models.CharField(blank=True, choices=[('sales', 'Sales Receipt'), ('customer_refund', 'Sales Refund'), ('expense', 'Expense Receipt'), ('expense_refund', 'Expense Refund'), ('transfer', 'Transfer Receipt')], help_text='The receipt type of the transaction.', max_length=20, null=True, verbose_name='Receipt Type'),
-        ),
-        migrations.AddField(
-            model_name='stagedtransactionmodel',
-            name='vendor_model',
-            field=models.ForeignKey(blank=True, help_text='The Vendor associated with the transaction.', null=True, on_delete=django.db.models.deletion.RESTRICT, to='django_ledger.vendormodel', verbose_name='Associated Vendor Model'),
-        ),
-        migrations.CreateModel(
-            name='ReceiptModel',
-            fields=[
-                ('created', models.DateTimeField(auto_now_add=True)),
-                ('updated', models.DateTimeField(auto_now=True, null=True)),
-                ('markdown_notes', models.TextField(blank=True, null=True, verbose_name='Markdown Notes')),
-                ('uuid', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('receipt_number', models.CharField(max_length=255, verbose_name='Receipt Number')),
-                ('receipt_date', models.DateField(verbose_name='Receipt Date')),
-                ('receipt_type', models.CharField(max_length=255, choices=[('sales', 'Sales Receipt'), ('customer_refund', 'Sales Refund'), ('expense', 'Expense Receipt'), ('expense_refund', 'Expense Refund'), ('transfer', 'Transfer Receipt')], verbose_name='Receipt Type')),
-                ('amount', models.DecimalField(decimal_places=2, help_text='Amount of the receipt.', max_digits=20, validators=[django.core.validators.MinValueValidator(0)], verbose_name='Receipt Amount')),
-                ('charge_account', models.ForeignKey(help_text='The financial account (cash or credit) where this transaction was made.', on_delete=django.db.models.deletion.PROTECT, related_name='charge_receiptmodel_set', to='django_ledger.accountmodel', verbose_name='Charge Account')),
-                ('customer_model', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, to='django_ledger.customermodel', verbose_name='Customer Model')),
-                ('ledger_model', models.ForeignKey(editable=False, on_delete=django.db.models.deletion.PROTECT, to='django_ledger.ledgermodel', verbose_name='Ledger Model')),
-                ('receipt_account', models.ForeignKey(help_text='The income or expense account where this transaction will be reflected', on_delete=django.db.models.deletion.PROTECT, to='django_ledger.accountmodel', verbose_name='PnL Account')),
-                ('staged_transaction_model', models.OneToOneField(blank=True, help_text='The staged transaction associated with the receipt from bank feeds.', null=True, on_delete=django.db.models.deletion.RESTRICT, to='django_ledger.stagedtransactionmodel', verbose_name='Staged Transaction Model')),
-                ('unit_model', models.ForeignKey(blank=True, help_text='Helps segregate receipts and transactions into different classes or departments.', null=True, on_delete=django.db.models.deletion.PROTECT, to='django_ledger.entityunitmodel', verbose_name='Unit Model')),
-                ('vendor_model', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, to='django_ledger.vendormodel', verbose_name='Vendor Model')),
+
+
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunPython(
+                    lambda apps, schema_editor:
+                        add_field_if_missing(
+                            apps,
+                            schema_editor,
+                            "StagedTransactionModel",
+                            "receipt_type",
+                        ),
+                    reverse_code=migrations.RunPython.noop,
+                ),
             ],
-            options={
-                'abstract': False,
-            },
-            bases=(models.Model, django_ledger.io.io_core.IOMixIn),
+            state_operations=[
+                migrations.AddField(
+                    model_name='stagedtransactionmodel',
+                    name='receipt_type',
+                    field=models.CharField(
+                        blank=True,
+                        choices=[
+                            ('sales', 'Sales Receipt'),
+                            ('customer_refund', 'Sales Refund'),
+                            ('expense', 'Expense Receipt'),
+                            ('expense_refund', 'Expense Refund'),
+                            ('transfer', 'Transfer Receipt'),
+                        ],
+                        help_text='The receipt type of the transaction.',
+                        max_length=20,
+                        null=True,
+                        verbose_name='Receipt Type',
+                    ),
+                ),
+            ],
+        ),
+
+
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunPython(
+                    lambda apps, schema_editor:
+                        add_field_if_missing(
+                            apps,
+                            schema_editor,
+                            "StagedTransactionModel",
+                            "vendor_model",
+                        ),
+                    reverse_code=migrations.RunPython.noop,
+                ),
+            ],
+            state_operations=[
+                migrations.AddField(
+                    model_name='stagedtransactionmodel',
+                    name='vendor_model',
+                    field=models.ForeignKey(
+                        blank=True,
+                        help_text='The Vendor associated with the transaction.',
+                        null=True,
+                        on_delete=django.db.models.deletion.RESTRICT,
+                        to='django_ledger.vendormodel',
+                        verbose_name='Associated Vendor Model',
+                    ),
+                ),
+            ],
+        ),
+
+
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunPython(
+                    lambda apps, schema_editor:
+                        create_model_if_missing(
+                            apps,
+                            schema_editor,
+                            "ReceiptModel",
+                        ),
+                    reverse_code=migrations.RunPython.noop,
+                ),
+            ],
+            state_operations=[
+                migrations.CreateModel(
+                    name='ReceiptModel',
+                    fields=[
+                        ('created', models.DateTimeField(auto_now_add=True)),
+                        ('updated', models.DateTimeField(auto_now=True, null=True)),
+                        ('markdown_notes', models.TextField(blank=True, null=True, verbose_name='Markdown Notes')),
+                        ('uuid', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                        ('receipt_number', models.CharField(max_length=255, verbose_name='Receipt Number')),
+                        ('receipt_type', models.CharField(
+                            max_length=255,
+                            choices=[
+                                ('sales', 'Sales Receipt'),
+                                ('customer_refund', 'Sales Refund'),
+                                ('expense', 'Expense Receipt'),
+                                ('expense_refund', 'Expense Refund'),
+                                ('transfer', 'Transfer Receipt'),
+                            ],
+                            verbose_name='Receipt Type',
+                        )),
+                        ('amount', models.DecimalField(
+                            decimal_places=2,
+                            help_text='Amount of the receipt.',
+                            max_digits=20,
+                            validators=[django.core.validators.MinValueValidator(0)],
+                            verbose_name='Receipt Amount',
+                        )),
+                        ('charge_account', models.ForeignKey(
+                            help_text='The financial account (cash or credit) where this transaction was made.',
+                            on_delete=django.db.models.deletion.PROTECT,
+                            related_name='charge_receiptmodel_set',
+                            to='django_ledger.accountmodel',
+                            verbose_name='Charge Account',
+                        )),
+                        ('customer_model', models.ForeignKey(
+                            blank=True,
+                            null=True,
+                            on_delete=django.db.models.deletion.PROTECT,
+                            to='django_ledger.customermodel',
+                            verbose_name='Customer Model',
+                        )),
+                        ('ledger_model', models.ForeignKey(
+                            editable=False,
+                            on_delete=django.db.models.deletion.PROTECT,
+                            to='django_ledger.ledgermodel',
+                            verbose_name='Ledger Model',
+                        )),
+                        ('receipt_account', models.ForeignKey(
+                            help_text='The income or expense account where this transaction will be reflected',
+                            on_delete=django.db.models.deletion.PROTECT,
+                            to='django_ledger.accountmodel',
+                            verbose_name='PnL Account',
+                        )),
+                        ('staged_transaction_model', models.OneToOneField(
+                            blank=True,
+                            help_text='The staged transaction associated with the receipt from bank feeds.',
+                            null=True,
+                            on_delete=django.db.models.deletion.RESTRICT,
+                            to='django_ledger.stagedtransactionmodel',
+                            verbose_name='Staged Transaction Model',
+                        )),
+                        ('unit_model', models.ForeignKey(
+                            blank=True,
+                            help_text='Helps segregate receipts and transactions into different classes or departments.',
+                            null=True,
+                            on_delete=django.db.models.deletion.PROTECT,
+                            to='django_ledger.entityunitmodel',
+                            verbose_name='Unit Model',
+                        )),
+                        ('vendor_model', models.ForeignKey(
+                            blank=True,
+                            null=True,
+                            on_delete=django.db.models.deletion.PROTECT,
+                            to='django_ledger.vendormodel',
+                            verbose_name='Vendor Model',
+                        )),
+                    ],
+                    options={
+                        'abstract': False,
+                    },
+                    bases=(models.Model, django_ledger.io.io_core.IOMixIn),
+                ),
+            ],
         ),
     ]
