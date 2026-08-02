@@ -6,6 +6,56 @@ import django_ledger.io.io_core
 import uuid
 from django.db import migrations, models
 
+from django.db import migrations
+
+
+def column_exists(schema_editor, table_name, column_name):
+    with schema_editor.connection.cursor() as cursor:
+        columns = [
+            col.name
+            for col in schema_editor.connection.introspection.get_table_description(
+                cursor,
+                table_name,
+            )
+        ]
+
+    return column_name in columns
+
+def add_customer_model_column(apps, schema_editor):
+    connection = schema_editor.connection
+
+    table_name = "django_ledger_stagedtransactionmodel"
+    column_name = "customer_model_id"
+
+    with connection.cursor() as cursor:
+        if schema_editor.connection.vendor == "mysql":
+            cursor.execute(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                AND table_name = %s
+                AND column_name = %s
+                """,
+                [table_name, column_name],
+            )
+            exists = cursor.fetchone()[0] > 0
+
+            if exists:
+                return
+
+    StagedTransactionModel = apps.get_model(
+        "django_ledger",
+        "StagedTransactionModel",
+    )
+
+    field = StagedTransactionModel._meta.get_field("customer_model")
+
+    schema_editor.add_field(
+        StagedTransactionModel,
+        field,
+    )
+
 
 class Migration(migrations.Migration):
 
@@ -14,10 +64,24 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
-            model_name='stagedtransactionmodel',
-            name='customer_model',
-            field=models.ForeignKey(blank=True, help_text='The Customer associated with the transaction.', null=True, on_delete=django.db.models.deletion.RESTRICT, to='django_ledger.customermodel', verbose_name='Associated Customer Model'),
+        migrations.SeparateDatabaseAndState(
+            database_operations=[
+                migrations.RunPython(
+                    add_customer_model_column,
+                    reverse_code=migrations.RunPython.noop,
+                ),
+            ],
+            state_operations=[
+                migrations.AddField(
+                    model_name="stagedtransactionmodel",
+                    name="customer_model",
+                    field=models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        to="django_ledger.customermodel",
+                        null=True,
+                    ),
+                ),
+            ],
         ),
         migrations.AddField(
             model_name='stagedtransactionmodel',
