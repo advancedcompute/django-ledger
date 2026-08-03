@@ -253,7 +253,7 @@ class ReceiptModelAbstract(CreateUpdateMixIn, MarkdownNotesMixIn, IOMixIn):
 
     uuid = models.UUIDField(default=uuid4, editable=False, primary_key=True)
     receipt_number = models.CharField(_('Receipt Number'), max_length=255)
-    receipt_date = models.DateField(_('Receipt Date'), default=None)
+    receipt_date = models.DateField(_('Receipt Date'), default=localdate())
     receipt_type = models.CharField(choices=RECEIPT_TYPES, max_length=15, verbose_name=_('Receipt Type'))
 
     ledger_model = models.ForeignKey(
