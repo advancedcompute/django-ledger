@@ -73,7 +73,7 @@ class Migration(migrations.Migration):
                         "StagedTransactionModel",
                         models.ForeignKey(
                             on_delete=django.db.models.deletion.CASCADE,
-                            to="django_ledger.customermodel",
+                            to="customermodel",
                             null=True,
                         ),
                     ),
@@ -86,7 +86,7 @@ class Migration(migrations.Migration):
                     name="customer_model",
                     field=models.ForeignKey(
                         on_delete=django.db.models.deletion.CASCADE,
-                        to="django_ledger.customermodel",
+                        to="customermodel",
                         null=True,
                     ),
                 ),
@@ -257,7 +257,7 @@ class Migration(migrations.Migration):
                                 blank=True,
                                 null=True,
                                 on_delete=django.db.models.deletion.PROTECT,
-                                to="django_ledger.customermodel",
+                                to="customermodel",
                                 verbose_name="Customer Model",
                             ),
                         ),
