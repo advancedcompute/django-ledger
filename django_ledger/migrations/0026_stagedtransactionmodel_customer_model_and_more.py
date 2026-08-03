@@ -34,7 +34,7 @@ def add_field_if_missing(model_name, field):
         if column_exists(
             schema_editor,
             Model._meta.db_table,
-            field.column,
+            field.get_attname_column()[1],
         ):
             return
 
